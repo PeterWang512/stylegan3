@@ -126,7 +126,7 @@ def parse_comma_separated_list(s):
 #----------------------------------------------------------------------------
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('StyleGAN3 training on slurm')
+    parser = argparse.ArgumentParser('StyleGAN3 training on slurm', add_help=False)
 
     # Required.
     parser.add_argument('--exp_name',     help='Experiment name',                                         type=str, default=None)
