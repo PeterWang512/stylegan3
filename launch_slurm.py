@@ -71,7 +71,8 @@ def main():
     executor.update_parameters(
         mem_gb=32 * num_gpus_per_node,
         gpus_per_node=num_gpus_per_node,
-        tasks_per_node=num_gpus_per_node,  # one task per GPU
+        cpus_per_task=16,
+        tasks_per_node=1,  # one task per GPU
         nodes=nodes,
         # slurm_constraint='rtx6000',
         slurm_additional_parameters={"nodelist": args.nodelist},

@@ -200,7 +200,7 @@ def main(opts):
     c = dnnlib.EasyDict() # Main config dict.
 
     ########### my modification #################
-    c.run_dir = None if opts.exp_name is None else os.path.join(outdir, opts.exp_name)
+    c.run_dir = None if opts.exp_name is None else os.path.join(opts.outdir, opts.exp_name)
     #############################################
 
     c.G_kwargs = dnnlib.EasyDict(class_name=None, z_dim=512, w_dim=512, mapping_kwargs=dnnlib.EasyDict())
