@@ -396,7 +396,7 @@ def training_loop(
                     pickle.dump(snapshot_data, f)
 
                 ############### my modification #################
-                latest_snapshot_pkl = snapshot_pkl = os.path.join(run_dir, f'network-snapshot-latest.pkl')
+                latest_snapshot_pkl = os.path.join(run_dir, f'network-snapshot-latest.pkl')
                 for name, opt in optimizer_dict.items():
                     opt_to_save = copy.deepcopy(opt)
                     for state in opt_to_save.state.values():
