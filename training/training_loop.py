@@ -154,12 +154,17 @@ def training_loop(
     G_ema = copy.deepcopy(G).eval()
 
     # Resume from existing pickle.
-    if (resume_pkl is not None) and (rank == 0):
+    # if (resume_pkl is not None) and (rank == 0):
+    if resume_pkl is not None:
         print(f'Resuming from "{resume_pkl}"')
         with dnnlib.util.open_url(resume_pkl) as f:
             resume_data = legacy.load_network_pkl(f)
-        for name, module in [('G', G), ('D', D), ('G_ema', G_ema)]:
-            misc.copy_params_and_buffers(resume_data[name], module, require_all=False)
+        if rank == 0: #### my modification
+            for name, module in [('G', G), ('D', D), ('G_ema', G_ema)]:
+                misc.copy_params_and_buffers(resume_data[name], module, require_all=False)
+        ################# my modification #####################
+        augment_p = resume_data['augment_pipe'].p.item()
+        ########################################################
 
     # Print network summary tables.
     if rank == 0:
@@ -191,6 +196,8 @@ def training_loop(
     if rank == 0:
         print('Setting up training phases...')
     loss = dnnlib.util.construct_class_by_name(device=device, G=G, D=D, augment_pipe=augment_pipe, **loss_kwargs) # subclass of training.loss.Loss
+
+    optimizer_dict = {} ## my modification
     phases = []
     for name, module, opt_kwargs, reg_interval in [('G', G, G_opt_kwargs, G_reg_interval), ('D', D, D_opt_kwargs, D_reg_interval)]:
         if reg_interval is None:
@@ -202,8 +209,21 @@ def training_loop(
             opt_kwargs.lr = opt_kwargs.lr * mb_ratio
             opt_kwargs.betas = [beta ** mb_ratio for beta in opt_kwargs.betas]
             opt = dnnlib.util.construct_class_by_name(module.parameters(), **opt_kwargs) # subclass of torch.optim.Optimizer
+
+            ############### my modification #################
+            if resume_pkl is not None:
+                opt_state_dict = resume_data[f'optim_{name}']
+                opt.load_state_dict(opt_state_dict)
+                for state in opt.state.values():
+                    for k, v in state.items():
+                        if isinstance(v, torch.Tensor):
+                            state[k] = v.to(device)
+            optimizer_dict[name] = opt
+            #################################################
+
             phases += [dnnlib.EasyDict(name=name+'main', module=module, opt=opt, interval=1)]
             phases += [dnnlib.EasyDict(name=name+'reg', module=module, opt=opt, interval=reg_interval)]
+
     for phase in phases:
         phase.start_event = None
         phase.end_event = None
@@ -215,7 +235,10 @@ def training_loop(
     grid_size = None
     grid_z = None
     grid_c = None
-    if rank == 0:
+    ################## my modification #############
+    # if rank == 0:
+    if rank == 0 and resume_kimg == 0:
+    #################################################
         print('Exporting sample images...')
         grid_size, images, labels = setup_snapshot_image_grid(training_set=training_set)
         save_image_grid(images, os.path.join(run_dir, 'reals.png'), drange=[0,255], grid_size=grid_size)
@@ -371,6 +394,23 @@ def training_loop(
             if rank == 0:
                 with open(snapshot_pkl, 'wb') as f:
                     pickle.dump(snapshot_data, f)
+
+                ############### my modification #################
+                latest_snapshot_pkl = snapshot_pkl = os.path.join(run_dir, f'network-snapshot-latest.pkl')
+                for name, opt in optimizer_dict.items():
+                    opt_to_save = copy.deepcopy(opt)
+                    for state in opt_to_save.state.values():
+                        for k, v in state.items():
+                            if isinstance(v, torch.Tensor):
+                                state[k] = v.cpu()
+                    snapshot_data[f'optim_{name}'] = opt_to_save.state_dict()
+
+                with open(latest_snapshot_pkl, 'wb') as f:
+                    pickle.dump(snapshot_data, f)
+
+                with open(os.path.join(run_dir, 'latest_kimg.txt'), 'w') as f:
+                    f.write(str(cur_nimg//1000) + '\n')
+                #################################################
 
         # Evaluate metrics.
         if (snapshot_data is not None) and (len(metrics) > 0):

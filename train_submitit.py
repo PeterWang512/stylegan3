@@ -52,14 +52,17 @@ def launch_training(c, desc, outdir, dry_run):
     dnnlib.util.Logger(should_flush=True)
 
     # Pick output directory.
-    prev_run_dirs = []
-    if os.path.isdir(outdir):
-        prev_run_dirs = [x for x in os.listdir(outdir) if os.path.isdir(os.path.join(outdir, x))]
-    prev_run_ids = [re.match(r'^\d+', x) for x in prev_run_dirs]
-    prev_run_ids = [int(x.group()) for x in prev_run_ids if x is not None]
-    cur_run_id = max(prev_run_ids, default=-1) + 1
-    c.run_dir = os.path.join(outdir, f'{cur_run_id:05d}-{desc}')
-    assert not os.path.exists(c.run_dir)
+    ####################### my modification ####################################
+    if c.run_dir is None:
+        prev_run_dirs = []
+        if os.path.isdir(outdir):
+            prev_run_dirs = [x for x in os.listdir(outdir) if os.path.isdir(os.path.join(outdir, x))]
+        prev_run_ids = [re.match(r'^\d+', x) for x in prev_run_dirs]
+        prev_run_ids = [int(x.group()) for x in prev_run_ids if x is not None]
+        cur_run_id = max(prev_run_ids, default=-1) + 1
+        c.run_dir = os.path.join(outdir, f'{cur_run_id:05d}-{desc}')
+        assert not os.path.exists(c.run_dir)
+    #############################################################################
 
     # Print options.
     print()
@@ -84,7 +87,7 @@ def launch_training(c, desc, outdir, dry_run):
 
     # Create output directory.
     print('Creating output directory...')
-    os.makedirs(c.run_dir)
+    os.makedirs(c.run_dir, exist_ok=True)  ###### my modification
     with open(os.path.join(c.run_dir, 'training_options.json'), 'wt') as f:
         json.dump(c, f, indent=2)
 
@@ -121,47 +124,54 @@ def parse_comma_separated_list(s):
 
 #----------------------------------------------------------------------------
 
-@click.command()
+def get_args_parser():
+    parser = argparse.ArgumentParser('StyleGAN3 training on slurm')
 
-# Required.
-@click.option('--outdir',       help='Where to save the results', metavar='DIR',                required=True)
-@click.option('--cfg',          help='Base configuration',                                      type=click.Choice(['stylegan3-t', 'stylegan3-r', 'stylegan2']), required=True)
-@click.option('--data',         help='Training data', metavar='[ZIP|DIR]',                      type=str, required=True)
-@click.option('--gpus',         help='Number of GPUs to use', metavar='INT',                    type=click.IntRange(min=1), required=True)
-@click.option('--batch',        help='Total batch size', metavar='INT',                         type=click.IntRange(min=1), required=True)
-@click.option('--gamma',        help='R1 regularization weight', metavar='FLOAT',               type=click.FloatRange(min=0), required=True)
+    # Required.
+    parser.add_argument('--exp_name',     help='Experiment name',                                         type=str, default=None)
+    parser.add_argument('--outdir',       help='Where to save the results', metavar='DIR',                required=True)
+    parser.add_argument('--cfg',          help='Base configuration',                                      choices=['stylegan3-t', 'stylegan3-r', 'stylegan2'], required=True)
+    parser.add_argument('--data',         help='Training data', metavar='[ZIP|DIR]',                      type=str, required=True)
+    parser.add_argument('--gpus',         help='Number of GPUs to use', metavar='INT',                    type=int, required=True)
+    parser.add_argument('--batch',        help='Total batch size', metavar='INT',                         type=int, required=True)
+    parser.add_argument('--gamma',        help='R1 regularization weight', metavar='FLOAT',               type=float, required=True)
 
-# Optional features.
-@click.option('--cond',         help='Train conditional model', metavar='BOOL',                 type=bool, default=False, show_default=True)
-@click.option('--mirror',       help='Enable dataset x-flips', metavar='BOOL',                  type=bool, default=False, show_default=True)
-@click.option('--aug',          help='Augmentation mode',                                       type=click.Choice(['noaug', 'ada', 'fixed']), default='ada', show_default=True)
-@click.option('--resume',       help='Resume from given network pickle', metavar='[PATH|URL]',  type=str)
-@click.option('--freezed',      help='Freeze first layers of D', metavar='INT',                 type=click.IntRange(min=0), default=0, show_default=True)
+    # Optional features.
+    parser.add_argument('--cond',         help='Train conditional model', metavar='BOOL',                 type=bool, default=False)
+    parser.add_argument('--mirror',       help='Enable dataset x-flips', metavar='BOOL',                  type=bool, default=False)
+    parser.add_argument('--aug',          help='Augmentation mode',                                       choices=['noaug', 'ada', 'fixed'], default='ada')
+    parser.add_argument('--resume',       help='Resume from given network pickle', metavar='[PATH|URL]',  type=str)
+    parser.add_argument('--resume_kimg',  help='Iteration (kimg) to resume from', metavar='INT',          type=int, default=0)
+    parser.add_argument('--freezed',      help='Freeze first layers of D', metavar='INT',                 type=int, default=0)
 
-# Misc hyperparameters.
-@click.option('--p',            help='Probability for --aug=fixed', metavar='FLOAT',            type=click.FloatRange(min=0, max=1), default=0.2, show_default=True)
-@click.option('--target',       help='Target value for --aug=ada', metavar='FLOAT',             type=click.FloatRange(min=0, max=1), default=0.6, show_default=True)
-@click.option('--batch-gpu',    help='Limit batch size per GPU', metavar='INT',                 type=click.IntRange(min=1))
-@click.option('--cbase',        help='Capacity multiplier', metavar='INT',                      type=click.IntRange(min=1), default=32768, show_default=True)
-@click.option('--cmax',         help='Max. feature maps', metavar='INT',                        type=click.IntRange(min=1), default=512, show_default=True)
-@click.option('--glr',          help='G learning rate  [default: varies]', metavar='FLOAT',     type=click.FloatRange(min=0))
-@click.option('--dlr',          help='D learning rate', metavar='FLOAT',                        type=click.FloatRange(min=0), default=0.002, show_default=True)
-@click.option('--map-depth',    help='Mapping network depth  [default: varies]', metavar='INT', type=click.IntRange(min=1))
-@click.option('--mbstd-group',  help='Minibatch std group size', metavar='INT',                 type=click.IntRange(min=1), default=4, show_default=True)
+    # Misc hyperparameters.
+    parser.add_argument('--p',            help='Probability for --aug=fixed', metavar='FLOAT',            type=float, default=0.2)
+    parser.add_argument('--target',       help='Target value for --aug=ada', metavar='FLOAT',             type=float, default=0.6)
+    parser.add_argument('--batch-gpu',    help='Limit batch size per GPU', metavar='INT',                 type=int)
+    parser.add_argument('--cbase',        help='Capacity multiplier', metavar='INT',                      type=int, default=32768)
+    parser.add_argument('--cmax',         help='Max. feature maps', metavar='INT',                        type=int, default=512)
+    parser.add_argument('--glr',          help='G learning rate  [default: varies]', metavar='FLOAT',     type=float)
+    parser.add_argument('--dlr',          help='D learning rate', metavar='FLOAT',                        type=float, default=0.002)
+    parser.add_argument('--map-depth',    help='Mapping network depth  [default: varies]', metavar='INT', type=int)
+    parser.add_argument('--mbstd-group',  help='Minibatch std group size', metavar='INT',                 type=int, default=4)
 
-# Misc settings.
-@click.option('--desc',         help='String to include in result dir name', metavar='STR',     type=str)
-@click.option('--metrics',      help='Quality metrics', metavar='[NAME|A,B,C|none]',            type=parse_comma_separated_list, default='fid50k_full', show_default=True)
-@click.option('--kimg',         help='Total training duration', metavar='KIMG',                 type=click.IntRange(min=1), default=25000, show_default=True)
-@click.option('--tick',         help='How often to print progress', metavar='KIMG',             type=click.IntRange(min=1), default=4, show_default=True)
-@click.option('--snap',         help='How often to save snapshots', metavar='TICKS',            type=click.IntRange(min=1), default=50, show_default=True)
-@click.option('--seed',         help='Random seed', metavar='INT',                              type=click.IntRange(min=0), default=0, show_default=True)
-@click.option('--fp32',         help='Disable mixed-precision', metavar='BOOL',                 type=bool, default=False, show_default=True)
-@click.option('--nobench',      help='Disable cuDNN benchmarking', metavar='BOOL',              type=bool, default=False, show_default=True)
-@click.option('--workers',      help='DataLoader worker processes', metavar='INT',              type=click.IntRange(min=1), default=3, show_default=True)
-@click.option('-n','--dry-run', help='Print training options and exit',                         is_flag=True)
+    # Misc settings.
+    parser.add_argument('--desc',         help='String to include in result dir name', metavar='STR',     type=str)
+    parser.add_argument('--metrics',      help='Quality metrics', metavar='[NAME|A,B,C|none]',            type=parse_comma_separated_list, default='fid50k_full')
+    parser.add_argument('--kimg',         help='Total training duration', metavar='KIMG',                 type=int, default=25000)
+    parser.add_argument('--tick',         help='How often to print progress', metavar='KIMG',             type=int, default=4)
+    parser.add_argument('--snap',         help='How often to save snapshots', metavar='TICKS',            type=int, default=50)
+    parser.add_argument('--seed',         help='Random seed', metavar='INT',                              type=int, default=0)
+    parser.add_argument('--fp32',         help='Disable mixed-precision', metavar='BOOL',                 type=bool, default=False)
+    parser.add_argument('--nobench',      help='Disable cuDNN benchmarking', metavar='BOOL',              type=bool, default=False)
+    parser.add_argument('--workers',      help='DataLoader worker processes', metavar='INT',              type=int, default=3)
+    parser.add_argument('-n','--dry-run', help='Print training options and exit',                         action='store_true')
 
-def main(**kwargs):
+    return parser
+
+#----------------------------------------------------------------------------
+
+def main(opts):
     """Train a GAN using the techniques described in the paper
     "Alias-Free Generative Adversarial Networks".
 
@@ -185,8 +195,13 @@ def main(**kwargs):
     """
 
     # Initialize config.
-    opts = dnnlib.EasyDict(kwargs) # Command line arguments.
+    # opts = dnnlib.EasyDict(kwargs) # Command line arguments. ### my modification
     c = dnnlib.EasyDict() # Main config dict.
+
+    ########### my modification #################
+    c.run_dir = None if opts.exp_name is None else os.path.join(outdir, opts.exp_name)
+    #############################################
+
     c.G_kwargs = dnnlib.EasyDict(class_name=None, z_dim=512, w_dim=512, mapping_kwargs=dnnlib.EasyDict())
     c.D_kwargs = dnnlib.EasyDict(class_name='training.networks_stylegan2.Discriminator', block_kwargs=dnnlib.EasyDict(), mapping_kwargs=dnnlib.EasyDict(), epilogue_kwargs=dnnlib.EasyDict())
     c.G_opt_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', betas=[0,0.99], eps=1e-8)
@@ -261,6 +276,7 @@ def main(**kwargs):
     # Resume.
     if opts.resume is not None:
         c.resume_pkl = opts.resume
+        c.resume_kimg = opts.resume_kimg
         ################ my modification ####################
         # c.ada_kimg = 100 # Make ADA react faster at the beginning.
         #####################################################
