@@ -59,7 +59,8 @@ class Trainer(object):
  
 def main():
     args = parse_args()
-    executor = submitit.AutoExecutor(folder=args.run_dir, slurm_max_num_timeout=30)
+    run_dir = os.path.join(args.outdir, args.exp_name)
+    executor = submitit.AutoExecutor(folder=run_dir, slurm_max_num_timeout=30)
 
     num_gpus_per_node = args.gpus
     nodes = args.nodes
