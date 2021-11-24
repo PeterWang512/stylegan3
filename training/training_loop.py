@@ -156,7 +156,7 @@ def training_loop(
     # Resume from existing pickle.
     # if (resume_pkl is not None) and (rank == 0):
     if resume_pkl is not None:
-        print(f'Resuming from "{resume_pkl}"')
+        if rank == 0: print(f'Resuming from "{resume_pkl}"') #### my modification
         with dnnlib.util.open_url(resume_pkl) as f:
             resume_data = legacy.load_network_pkl(f)
         if rank == 0: #### my modification
