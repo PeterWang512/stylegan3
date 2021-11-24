@@ -18,6 +18,7 @@ Almost copy-paste from https://github.com/facebookresearch/deit/blob/main/run_wi
 import argparse
 import os
 import re
+import pickle
 import uuid
 from pathlib import Path
 import submitit
@@ -46,14 +47,16 @@ class Trainer(object):
         import os
         import submitit
 
-        self.training_args.resume_pkl = os.path.join(self.training_args.run_dir , f'network-snapshot-latest.pkl' ) 
+        opts = self.training_args
+        run_dir = os.path.join(opts.outdir, opts.exp_name)
+        opts.resume = os.path.join(run_dir , f'network-snapshot-latest.pkl')
 
-        with open(os.path.join(self.training_args.run_dir, 'latest_kimg.txt'), 'r') as f:
-            resume_kimg = int(f.readline().strip())
-        self.training_args.resume_kimg = resume_kimg
+        with open(os.path.join(run_dir, 'latest_kimg.pkl'), 'rb') as f:
+            resume_kimg = pickle.load(f)
+        opts.resume_kimg = resume_kimg
 
         print("Requeuing...")
-        empty_trainer = type(self)(self.training_args)
+        empty_trainer = type(self)(opts)
         return submitit.helpers.DelayedSubmission(empty_trainer)
 
  

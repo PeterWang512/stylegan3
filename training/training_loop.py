@@ -409,8 +409,8 @@ def training_loop(
                 with open(latest_snapshot_pkl, 'wb') as f:
                     pickle.dump(snapshot_data, f)
 
-                with open(os.path.join(run_dir, 'latest_kimg.txt'), 'w') as f:
-                    f.write(str(cur_nimg//1000) + '\n')
+                with open(os.path.join(run_dir, 'latest_kimg.pkl'), 'wb') as f:
+                    pickle.dump(int(cur_nimg//1000), f)
                 #################################################
 
         # Evaluate metrics.
