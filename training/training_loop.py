@@ -163,7 +163,8 @@ def training_loop(
             for name, module in [('G', G), ('D', D), ('G_ema', G_ema)]:
                 misc.copy_params_and_buffers(resume_data[name], module, require_all=False)
         ################# my modification #####################
-        augment_p = resume_data['augment_pipe'].p.item()
+        if resume_data['augment_pipe'] is not None:
+            augment_p = resume_data['augment_pipe'].p.item()
         ########################################################
 
     # Print network summary tables.
