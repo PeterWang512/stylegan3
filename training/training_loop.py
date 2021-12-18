@@ -212,7 +212,7 @@ def training_loop(
             opt = dnnlib.util.construct_class_by_name(module.parameters(), **opt_kwargs) # subclass of torch.optim.Optimizer
 
             ############### my modification #################
-            if resume_pkl is not None:
+            if resume_pkl is not None and f'optim_{name}' in resume_data:
                 opt_state_dict = resume_data[f'optim_{name}']
                 opt.load_state_dict(opt_state_dict)
                 for state in opt.state.values():
